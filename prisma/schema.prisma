@@ -1,0 +1,207 @@
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+    output = "/home/ubuntu/inventario-constructora/nextjs_space/node_modules/.prisma/client"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+enum Rol {
+  ADMIN
+  JEFATURA_AREA
+  JEFATURA_COMPRAS
+  GERENCIA_FINANCIERA
+  GERENCIA_GENERAL
+  BODEGUERO
+}
+
+enum TipoMovimiento {
+  ENTRADA
+  SALIDA
+  TRASLADO
+  AJUSTE
+}
+
+enum EstadoOC {
+  PENDIENTE_APROBACION
+  APROBADA
+  RECHAZADA
+}
+
+enum NivelAprobacion {
+  JEFATURA_AREA
+  JEFATURA_COMPRAS
+  GERENCIA_FINANCIERA
+  GERENCIA_GENERAL
+}
+
+enum TipoAlerta {
+  REORDEN
+  DUPLICADO
+  SOBREPRECIO
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  rol           Rol       @default(BODEGUERO)
+  accounts      Account[]
+  sessions      Session[]
+  movimientos   Movimiento[]
+  ordenesAprobadas OrdenCompra[] @relation("AprobadaPor")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+model Material {
+  id               String       @id @default(cuid())
+  codigo           String       @unique
+  nombre           String
+  unidad           String
+  demandaPromDia   Float        @map("demanda_prom_dia")
+  demandaMaxDia    Float        @map("demanda_max_dia")
+  tiempoEntregaDias Int         @map("tiempo_entrega_dias")
+  stockMaximo      Float?       @map("stock_maximo")
+  ubicacion        String       @default("Bodega Principal")
+  movimientos      Movimiento[]
+  lineasOC         LineaOC[]
+  alertas          Alerta[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@map("materiales")
+}
+
+model Proveedor {
+  id        String       @id @default(cuid())
+  codigo    String       @unique
+  nombre    String
+  contacto  String?
+  telefono  String?
+  email     String?
+  ordenes   OrdenCompra[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@map("proveedores")
+}
+
+model OrdenCompra {
+  id                    String          @id @default(cuid())
+  numeroOC              String          @unique @map("numero_oc")
+  fecha                 DateTime
+  area                  String
+  proveedorId           String          @map("proveedor_id")
+  proveedor             Proveedor       @relation(fields: [proveedorId], references: [id])
+  estado                EstadoOC        @default(PENDIENTE_APROBACION)
+  nivelAprobacionReq    NivelAprobacion @map("nivel_aprobacion_requerido")
+  aprobadoPorId         String?         @map("aprobado_por_id")
+  aprobadoPor           User?           @relation("AprobadaPor", fields: [aprobadoPorId], references: [id])
+  montoTotal            Float           @map("monto_total")
+  lineas                LineaOC[]
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@index([proveedorId])
+  @@index([fecha])
+  @@index([estado])
+  @@map("ordenes_compra")
+}
+
+model LineaOC {
+  id              String      @id @default(cuid())
+  ordenCompraId   String      @map("orden_compra_id")
+  ordenCompra     OrdenCompra @relation(fields: [ordenCompraId], references: [id], onDelete: Cascade)
+  materialId      String      @map("material_id")
+  material        Material    @relation(fields: [materialId], references: [id])
+  cantidad        Float
+  precioUnitario  Float       @map("precio_unitario")
+  precioContrato  Float?      @map("precio_contrato")
+  createdAt       DateTime    @default(now())
+
+  @@index([ordenCompraId])
+  @@index([materialId])
+  @@map("lineas_oc")
+}
+
+model Movimiento {
+  id               String          @id @default(cuid())
+  materialId       String          @map("material_id")
+  material         Material        @relation(fields: [materialId], references: [id])
+  tipo             TipoMovimiento
+  cantidad         Float
+  fecha            DateTime
+  usuarioId        String?         @map("usuario_id")
+  usuario          User?           @relation(fields: [usuarioId], references: [id])
+  ubicacionOrigen  String?         @map("ubicacion_origen")
+  ubicacionDestino String?         @map("ubicacion_destino")
+  documentoOrigen  String?         @map("documento_origen")
+  notas            String?
+  createdAt        DateTime        @default(now())
+
+  @@index([materialId])
+  @@index([fecha])
+  @@index([tipo])
+  @@map("movimientos")
+}
+
+model Alerta {
+  id          String     @id @default(cuid())
+  materialId  String     @map("material_id")
+  material    Material   @relation(fields: [materialId], references: [id])
+  tipo        TipoAlerta
+  mensaje     String
+  fecha       DateTime   @default(now())
+  resuelta    Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+
+  @@index([materialId])
+  @@index([resuelta])
+  @@map("alertas")
+}
